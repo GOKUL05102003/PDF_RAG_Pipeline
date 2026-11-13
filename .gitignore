@@ -1,0 +1,32 @@
+# Environment variables & secrets (CRITICAL: Never commit API keys!)
+.env
+*.env.local
+
+# Local vector database storage
+chroma_db/
+*.db
+*.sqlite3
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Audio outputs
+*.wav
+*.mp3
+*.flac
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Virtual environments
+venv/
+.venv/
+env/
+
