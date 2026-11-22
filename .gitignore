@@ -30,3 +30,7 @@ venv/
 .venv/
 env/
 
+# Uploaded documents (keep sample document only)
+data/*
+!data/iPhone_16_Pro_and_iPhone_16_Pro_Max_PER_Sept2024.pdf
+

@@ -2,6 +2,7 @@ import os
 import time
 from pathlib import Path
 from typing import List, Optional
+import chromadb
 from langchain_core.documents import Document
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_chroma import Chroma
@@ -19,17 +20,33 @@ def get_embedding_function(api_key: Optional[str] = None) -> GoogleGenerativeAIE
         google_api_key=key
     )
 
+def delete_collection(
+    collection_name: Optional[str] = None,
+    persist_directory: Optional[str] = None
+) -> bool:
+    """Safely deletes a collection from Chroma persistent storage."""
+    c_name = collection_name or config.COLLECTION_NAME
+    p_dir = persist_directory or str(config.CHROMA_DIR)
+    try:
+        client = chromadb.PersistentClient(path=p_dir)
+        client.delete_collection(name=c_name)
+        print(f"[VectorStore] Successfully deleted collection '{c_name}'.")
+        return True
+    except Exception as e:
+        print(f"[VectorStore] Notice: Collection '{c_name}' could not be deleted or does not exist: {e}")
+        return False
+
 def build_vectorstore(
     chunks: List[Document],
     collection_name: Optional[str] = None,
     persist_directory: Optional[str] = None,
     batch_size: int = 5,
-    batch_delay_seconds: float = 3.0,
+    batch_delay_seconds: float = 2.0,
     api_key: Optional[str] = None
 ) -> Chroma:
     """
     Creates or updates a Chroma vector store by embedding document chunks
-    in throttled batches to respect API rate limits (matching Step 6).
+    in throttled batches to respect API rate limits.
     """
     embeddings = get_embedding_function(api_key=api_key)
     c_name = collection_name or config.COLLECTION_NAME
@@ -57,6 +74,26 @@ def build_vectorstore(
     print(f"[VectorStore] All {total_chunks} chunks successfully embedded and stored in Chroma!\n")
     return vectorstore
 
+def reset_or_rebuild_vectorstore(
+    chunks: List[Document],
+    collection_name: Optional[str] = None,
+    persist_directory: Optional[str] = None,
+    batch_size: int = 5,
+    batch_delay_seconds: float = 2.0,
+    api_key: Optional[str] = None
+) -> Chroma:
+    """Deletes existing collection if corrupted and rebuilds fresh."""
+    c_name = collection_name or config.COLLECTION_NAME
+    delete_collection(collection_name=c_name, persist_directory=persist_directory)
+    return build_vectorstore(
+        chunks=chunks,
+        collection_name=c_name,
+        persist_directory=persist_directory,
+        batch_size=batch_size,
+        batch_delay_seconds=batch_delay_seconds,
+        api_key=api_key
+    )
+
 def get_or_create_vectorstore(
     collection_name: Optional[str] = None,
     persist_directory: Optional[str] = None,
@@ -72,4 +109,3 @@ def get_or_create_vectorstore(
         embedding_function=embeddings,
         persist_directory=p_dir
     )
-

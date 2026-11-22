@@ -1,4 +1,7 @@
+import os
 import re
+import asyncio
+import concurrent.futures
 from pathlib import Path
 from typing import Optional
 import pyttsx3
@@ -51,12 +54,10 @@ def speak_text(text: str, save_to_file: Optional[str] = None, blocking: bool = T
         return False
 
     try:
-        print("\n[TTS] Speaking final answer out loud...")
         if save_to_file:
             out_path = Path(save_to_file)
             out_path.parent.mkdir(parents=True, exist_ok=True)
             engine.save_to_file(speech_content, str(out_path))
-            print(f"[TTS] Saved audio file to: {out_path}")
 
         engine.say(speech_content)
         if blocking:
@@ -66,3 +67,46 @@ def speak_text(text: str, save_to_file: Optional[str] = None, blocking: bool = T
         print(f"[TTS Error] Playback failed: {e}")
         return False
 
+async def _edge_tts_synthesize(text: str, output_path: str, voice: str = "en-US-GuyNeural"):
+    """Internal helper to generate high quality neural audio using edge-tts."""
+    import edge_tts
+    communicate = edge_tts.Communicate(text, voice)
+    await communicate.save(output_path)
+
+def synthesize_audio_file(text: str, output_path: str, prefer_neural: bool = True) -> Optional[str]:
+    """
+    Synthesizes speech to an audio file.
+    Runs edge-tts in a separate worker thread to avoid event loop conflicts in Streamlit,
+    with an offline pyttsx3 WAV fallback. Returns the actual saved file path, or None.
+    """
+    speech_content = clean_for_speech(text)
+    if not speech_content:
+        return None
+
+    out_file = Path(output_path)
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # 1. Try high quality neural edge-tts in a clean background thread
+    if prefer_neural:
+        try:
+            mp3_path = str(out_file.with_suffix(".mp3"))
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                pool.submit(asyncio.run, _edge_tts_synthesize(speech_content, mp3_path)).result(timeout=10)
+            if Path(mp3_path).exists() and Path(mp3_path).stat().st_size > 0:
+                return mp3_path
+        except Exception as e:
+            print(f"[TTS Neural Notice] edge-tts unavailable ({e}), falling back to pyttsx3.")
+
+    # 2. Offline fallback via pyttsx3 (SAPI5 produces WAV files natively on Windows)
+    try:
+        wav_path = str(out_file.with_suffix(".wav"))
+        engine = get_tts_engine()
+        if engine:
+            engine.save_to_file(speech_content, wav_path)
+            engine.runAndWait()
+            if Path(wav_path).exists() and Path(wav_path).stat().st_size > 0:
+                return wav_path
+    except Exception as e:
+        print(f"[TTS Offline Fallback Error]: {e}")
+
+    return None
